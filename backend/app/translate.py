@@ -1,3 +1,4 @@
+import time
 from typing import Optional
 
 from .config import DEEPL_API_KEY
@@ -23,11 +24,31 @@ def _translate_deepl(text: str, target_lang: str, source_lang: Optional[str]) ->
     return result.text
 
 
-def _translate_google_free(text: str, target_lang: str, source_lang: Optional[str]) -> str:
-    # Fallback gratuit, sans cle API. Pratique pour du dev/MVP, qualite
-    # inferieure a DeepL. A remplacer en prod si le volume est important.
+def _translate_google_free(
+    text: str, target_lang: str, source_lang: Optional[str], max_retries: int = 3
+) -> str:
+    # Fallback gratuit, sans cle API. Pratique pour du dev/MVP, mais bati sur
+    # un point d'acces non officiel de Google -> sujet a du rate-limiting
+    # (ex: TooManyRequests). On reessaie avec un delai croissant avant
+    # d'abandonner. Pour un usage serieux/en production, utiliser DeepL
+    # (DEEPL_API_KEY) est fortement recommande.
     from deep_translator import GoogleTranslator
+    from deep_translator.exceptions import TooManyRequests
 
-    return GoogleTranslator(
-        source=source_lang or "auto", target=target_lang
-    ).translate(text)
+    last_error: Exception | None = None
+    for attempt in range(max_retries):
+        try:
+            return GoogleTranslator(
+                source=source_lang or "auto", target=target_lang
+            ).translate(text)
+        except TooManyRequests as e:
+            last_error = e
+            wait = 2 * (attempt + 1)  # 2s, 4s, 6s...
+            print(
+                f"[translate] Rate-limite par Google (tentative {attempt + 1}/{max_retries}), "
+                f"nouvel essai dans {wait}s...",
+                flush=True,
+            )
+            time.sleep(wait)
+
+    raise last_error

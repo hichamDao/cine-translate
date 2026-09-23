@@ -64,14 +64,21 @@ async def ws_translate(
 
             for seg in segments:
                 print(f"[ws]   segment [{seg['start']:.1f}-{seg['end']:.1f}] original: {seg['text']!r}", flush=True)
-                translated = await loop.run_in_executor(
-                    None,
-                    translate_text,
-                    seg["text"],
-                    target_lang,
-                    source_lang or detected_lang,
-                )
-                print(f"[ws]   -> traduit ({target_lang}): {translated!r}", flush=True)
+                try:
+                    translated = await loop.run_in_executor(
+                        None,
+                        translate_text,
+                        seg["text"],
+                        target_lang,
+                        source_lang or detected_lang,
+                    )
+                    print(f"[ws]   -> traduit ({target_lang}): {translated!r}", flush=True)
+                except Exception as e:  # noqa: BLE001
+                    # Un segment qui echoue (ex: rate-limit du traducteur) ne doit
+                    # pas faire tomber toute la connexion : on retombe sur le texte
+                    # original pour ce segment et on continue.
+                    print(f"[ws]   -> ECHEC traduction ({type(e).__name__}: {e}), fallback sur le texte original", flush=True)
+                    translated = seg["text"]
                 await websocket.send_json(
                     {
                         "start": offset + seg["start"],
