@@ -77,6 +77,12 @@ docker run -p 8000:8000 --env-file .env cine-translate-backend
 
 ## Limites connues (MVP)
 
+- **Les MP4 doivent etre en "faststart"** (metadonnees `moov` au debut du
+  fichier). Sans ca, la lecture en flux sequentiel echoue avec une erreur
+  `partial file` / `Invalid data found`. La plupart des CDN/hebergeurs
+  video serieux (YouTube, Vimeo, la majorite des CDN) le font deja. Pour
+  verifier ou corriger un fichier a vous : `ffmpeg -i in.mp4 -c copy
+  -movflags +faststart out.mp4`.
 - Un modele plus gros (`medium`/`large`) donne une meilleure transcription
   mais est plus lent sur CPU — sur un film entier, du retard peut s'accumuler
   si le materiel est modeste. Un GPU ou un modele plus petit aide beaucoup.
