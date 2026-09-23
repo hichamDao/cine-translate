@@ -39,6 +39,10 @@ async def ws_translate(
     les sous-titres (cues) au fur et a mesure. Le client Flutter lit la
     video directement depuis `url`, independamment de ce websocket.
     """
+    print("=" * 60, flush=True)
+    print(f"[ws] REQUETE RECUE - url={url}", flush=True)
+    print("=" * 60, flush=True)
+
     await websocket.accept()
     print(f"[ws] Nouvelle connexion - url={url} target_lang={target_lang} source_lang={source_lang}", flush=True)
 
