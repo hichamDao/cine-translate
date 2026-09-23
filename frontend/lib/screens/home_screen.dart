@@ -62,7 +62,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              initialValue: _targetLang,
+              value: _targetLang,
               decoration: const InputDecoration(
                 labelText: 'Traduire vers',
                 border: OutlineInputBorder(),
