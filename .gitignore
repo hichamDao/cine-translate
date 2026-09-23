@@ -1,0 +1,27 @@
+# --- Python / backend ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+.env
+*.log
+
+# --- Flutter / frontend ---
+frontend/.dart_tool/
+frontend/.flutter-plugins
+frontend/.flutter-plugins-dependencies
+frontend/.packages
+frontend/build/
+frontend/android/
+frontend/ios/
+frontend/linux/
+frontend/macos/
+frontend/windows/
+frontend/web/
+frontend/*.iml
+
+# --- OS / editors ---
+.DS_Store
+.idea/
+.vscode/
