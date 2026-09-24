@@ -5,9 +5,16 @@ from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from .audio_stream import iter_pcm_chunks, open_audio_stream, read_stderr_tail
-from .config import CHUNK_SECONDS, DEFAULT_TARGET_LANG
+from .config import CHUNK_SECONDS, DEEPL_API_KEY, DEFAULT_TARGET_LANG
 from .transcribe import transcribe_chunk
 from .translate import translate_text
+
+print("=" * 60, flush=True)
+if DEEPL_API_KEY:
+    print(f"[config] Traduction : DeepL ACTIVE (cle detectee, {len(DEEPL_API_KEY)} caracteres)", flush=True)
+else:
+    print("[config] Traduction : fallback gratuit Google (AUCUNE cle DEEPL_API_KEY trouvee dans .env)", flush=True)
+print("=" * 60, flush=True)
 
 app = FastAPI(title="Cine-Translate backend")
 
