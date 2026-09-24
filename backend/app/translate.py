@@ -18,10 +18,21 @@ def _translate_deepl(text: str, target_lang: str, source_lang: Optional[str]) ->
     translator = deepl.Translator(DEEPL_API_KEY)
     result = translator.translate_text(
         text,
-        target_lang=target_lang.upper(),
+        target_lang=_normalize_deepl_target(target_lang),
         source_lang=source_lang.upper() if source_lang else None,
     )
     return result.text
+
+
+def _normalize_deepl_target(target_lang: str) -> str:
+    """DeepL exige une variante precise pour EN et PT en langue CIBLE
+    (le code generique est deprecie et rejete par l'API)."""
+    code = target_lang.upper()
+    if code == "EN":
+        return "EN-US"
+    if code == "PT":
+        return "PT-PT"
+    return code
 
 
 def _translate_google_free(
