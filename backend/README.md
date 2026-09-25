@@ -75,6 +75,40 @@ docker run -p 8000:8000 --env-file .env cine-translate-backend
 | `DEFAULT_TARGET_LANG` | Langue cible par defaut                                   | `fr`   |
 | `DEEPL_API_KEY`       | Cle DeepL (optionnel, sinon fallback gratuit Google)      | vide   |
 
+## Accélérer le traitement (suivre le direct)
+
+Sur CPU, `medium` peut être plus lent que la vidéo elle-même — les sous-titres
+arrivent alors en retard. Trois leviers, à combiner selon ton besoin :
+
+**1. Modèle plus léger** (le plus efficace, dans `.env`) :
+
+| Modèle | Vitesse CPU | Qualité |
+|---|---|---|
+| `tiny` | très rapide | correcte pour de l'audio clair |
+| `base` | rapide | bonne |
+| `small` | moyenne | très bonne — bon compromis |
+| `medium` (défaut) | lente | excellente |
+| `large-v3` | très lente | la meilleure |
+
+```
+WHISPER_MODEL_SIZE=small
+```
+
+**2. GPU (NVIDIA uniquement)** — gain de 10x à 20x si tu as une carte NVIDIA
+avec CUDA installé :
+
+```
+WHISPER_DEVICE=cuda
+WHISPER_COMPUTE_TYPE=float16
+```
+
+**3. `WHISPER_BEAM_SIZE`** — déjà réduit à `1` par défaut (décodage glouton,
+rapide). Le remonter à `5` améliore légèrement la qualité mais ralentit :
+
+```
+WHISPER_BEAM_SIZE=1
+```
+
 ## Limites connues (MVP)
 
 - **Les MP4 doivent etre en "faststart"** (metadonnees `moov` au debut du
