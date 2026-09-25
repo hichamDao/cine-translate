@@ -3,7 +3,7 @@ from typing import List, Optional, Tuple
 import numpy as np
 from faster_whisper import WhisperModel
 
-from .config import WHISPER_MODEL_SIZE, WHISPER_DEVICE, WHISPER_COMPUTE_TYPE
+from .config import WHISPER_MODEL_SIZE, WHISPER_DEVICE, WHISPER_COMPUTE_TYPE, WHISPER_BEAM_SIZE
 
 _model: Optional[WhisperModel] = None
 
@@ -43,6 +43,7 @@ def transcribe_chunk(
         audio,
         language=source_lang,  # None -> detection automatique
         vad_filter=True,       # ignore les silences, evite le bruit de fond
+        beam_size=WHISPER_BEAM_SIZE,  # plus bas = plus rapide, qualite legerement moindre
     )
 
     segments = [

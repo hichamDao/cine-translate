@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .audio_stream import iter_pcm_chunks, open_audio_stream, read_stderr_tail
 from .config import CHUNK_SECONDS, DEEPL_API_KEY, DEFAULT_TARGET_LANG
 from .transcribe import transcribe_chunk
-from .translate import translate_text
+from .translate import translate_batch
 
 print("=" * 60, flush=True)
 if DEEPL_API_KEY:
@@ -69,31 +69,34 @@ async def ws_translate(
             )
             print(f"[ws] Chunk #{chunk_num}: {len(segments)} segment(s) detecte(s) (langue detectee: {detected_lang})", flush=True)
 
-            for seg in segments:
-                print(f"[ws]   segment [{seg['start']:.1f}-{seg['end']:.1f}] original: {seg['text']!r}", flush=True)
+            if segments:
+                texts = [seg["text"] for seg in segments]
                 try:
-                    translated = await loop.run_in_executor(
+                    translations = await loop.run_in_executor(
                         None,
-                        translate_text,
-                        seg["text"],
+                        translate_batch,
+                        texts,
                         target_lang,
                         source_lang or detected_lang,
                     )
-                    print(f"[ws]   -> traduit ({target_lang}): {translated!r}", flush=True)
+                    print(f"[ws]   {len(translations)} segment(s) traduit(s) en 1 appel groupe", flush=True)
                 except Exception as e:  # noqa: BLE001
-                    # Un segment qui echoue (ex: rate-limit du traducteur) ne doit
-                    # pas faire tomber toute la connexion : on retombe sur le texte
-                    # original pour ce segment et on continue.
-                    print(f"[ws]   -> ECHEC traduction ({type(e).__name__}: {e}), fallback sur le texte original", flush=True)
-                    translated = seg["text"]
-                await websocket.send_json(
-                    {
-                        "start": offset + seg["start"],
-                        "end": offset + seg["end"],
-                        "text": translated,
-                        "original": seg["text"],
-                    }
-                )
+                    # Un chunk qui echoue (ex: rate-limit du traducteur) ne doit
+                    # pas faire tomber toute la connexion : on retombe sur les
+                    # textes originaux et on continue avec le chunk suivant.
+                    print(f"[ws]   -> ECHEC traduction groupee ({type(e).__name__}: {e}), fallback sur les textes originaux", flush=True)
+                    translations = texts
+
+                for seg, translated in zip(segments, translations):
+                    print(f"[ws]   [{seg['start']:.1f}-{seg['end']:.1f}] {seg['text']!r} -> {translated!r}", flush=True)
+                    await websocket.send_json(
+                        {
+                            "start": offset + seg["start"],
+                            "end": offset + seg["end"],
+                            "text": translated,
+                            "original": seg["text"],
+                        }
+                    )
 
             offset += CHUNK_SECONDS
 
