@@ -65,6 +65,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
         _startPlayback();
       }
     });
+
+    // Filet de securite : si le serveur de traduction ne repond jamais
+    // (probleme reseau, serveur eteint...), on ne bloque pas la video
+    // indefiniment. On la lance quand meme au bout de 8 secondes.
+    Future.delayed(const Duration(seconds: 8), () {
+      if (!mounted) return;
+      if (!_readyToPlay) {
+        print('Timeout traduction: lecture forcee sans attendre');
+        _startPlayback();
+      }
+    });
   }
 
   void _startPlayback() {
