@@ -94,8 +94,13 @@ arrivent alors en retard. Trois leviers, à combiner selon ton besoin :
 WHISPER_MODEL_SIZE=small
 ```
 
-**2. GPU (NVIDIA uniquement)** — gain de 10x à 20x si tu as une carte NVIDIA
-avec CUDA installé :
+**2. GPU (NVIDIA uniquement)** — gain de 10x à 20x, mais seulement avec une
+carte suffisamment puissante (une carte d'entrée de gamme/ancienne type
+laptop bas de gamme n'apporte quasi rien). En local pour du dev/test, le
+CPU avec un petit modèle est souvent plus simple. Pour la vitesse réelle,
+l'option naturelle est de **déployer plus tard sur un serveur cloud avec
+un vrai GPU** (RunPod, Vast.ai, AWS EC2 g4dn/g5, GCP...) — voir
+`Dockerfile.gpu` à la racine du dossier `backend/`, prêt pour ce cas :
 
 ```
 WHISPER_DEVICE=cuda
