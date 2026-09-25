@@ -27,6 +27,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   final List<SubtitleCue> _cues = [];
   String _currentText = '';
   String _status = 'connecting';
+  bool _readyToPlay = false;
 
   @override
   void initState() {
@@ -35,12 +36,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
     // Le lecteur pointe DIRECTEMENT sur l'URL source. Le serveur Python
     // n'est jamais dans la boucle de lecture video : il fournit
     // uniquement les sous-titres, en parallele, via websocket.
+    // On initialise la video mais on NE LA LANCE PAS tout de suite : on
+    // attend d'avoir les premiers sous-titres, sinon les toutes premieres
+    // secondes se jouent sans traduction (surtout genant si le traitement
+    // est plus lent que la video elle-meme).
     _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))
       ..initialize().then((_) {
         if (!mounted) return;
         setState(() {});
-        _controller.play();
         _controller.addListener(_syncSubtitle);
+        if (_readyToPlay) _controller.play();
       });
 
     _translationService =
@@ -54,7 +59,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _translationService.status.listen((s) {
       if (!mounted) return;
       setState(() => _status = s);
+      // Des le premier evenement utile (premiers sous-titres recus,
+      // traitement termine, ou erreur), on peut lancer la lecture.
+      if (!_readyToPlay && s != 'connecting') {
+        _startPlayback();
+      }
     });
+  }
+
+  void _startPlayback() {
+    if (_readyToPlay) return;
+    setState(() => _readyToPlay = true);
+    if (_controller.value.isInitialized) {
+      _controller.play();
+    }
   }
 
   void _syncSubtitle() {
@@ -101,17 +119,62 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         allowScrubbing: true,
                       ),
                     ),
+                    if (!_readyToPlay) _LoadingOverlay(
+                      cuesReceived: _cues.length,
+                      onSkip: _startPlayback,
+                    ),
                   ],
                 ),
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => setState(() {
-          _controller.value.isPlaying
-              ? _controller.pause()
-              : _controller.play();
-        }),
-        child: Icon(_controller.value.isPlaying ? Icons.pause : Icons.play_arrow),
+      floatingActionButton: _readyToPlay
+          ? FloatingActionButton(
+              onPressed: () => setState(() {
+                _controller.value.isPlaying
+                    ? _controller.pause()
+                    : _controller.play();
+              }),
+              child: Icon(_controller.value.isPlaying ? Icons.pause : Icons.play_arrow),
+            )
+          : null,
+    );
+  }
+}
+
+class _LoadingOverlay extends StatelessWidget {
+  final int cuesReceived;
+  final VoidCallback onSkip;
+  const _LoadingOverlay({required this.cuesReceived, required this.onSkip});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.black87,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(color: Colors.white),
+            const SizedBox(height: 16),
+            const Text(
+              'Préparation des sous-titres...',
+              style: TextStyle(color: Colors.white, fontSize: 16),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '$cuesReceived sous-titre(s) reçu(s)',
+              style: const TextStyle(color: Colors.white54, fontSize: 13),
+            ),
+            const SizedBox(height: 20),
+            TextButton(
+              onPressed: onSkip,
+              child: const Text(
+                'Lire sans attendre',
+                style: TextStyle(color: Colors.white70),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
