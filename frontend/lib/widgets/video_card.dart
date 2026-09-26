@@ -24,12 +24,16 @@ class VideoCard extends StatelessWidget {
     this.isFavorite = false,
   });
 
+  ImageProvider? _resolveImage() {
+    if (posterFilePath != null) return FileImage(File(posterFilePath!));
+    if (posterUrl != null) return NetworkImage(posterUrl!);
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final hasImage = posterFilePath != null || posterUrl != null;
-    final ImageProvider? image = posterFilePath != null
-        ? FileImage(File(posterFilePath!))
-        : (posterUrl != null ? NetworkImage(posterUrl!) : null);
+    final ImageProvider? image = _resolveImage();
 
     return GestureDetector(
       onTap: onTap,
