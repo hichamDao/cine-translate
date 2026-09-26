@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/app_settings.dart';
 import '../widgets.dart';
 import '../theme.dart';
 import 'language_selection_screen.dart';
@@ -19,6 +20,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _autoTranslation = true;
   bool _backgroundDownload = true;
   bool _notifications = true;
+  String _backendUrl = AppSettings.defaultBackendUrl;
+  String _profileName = 'Utilisateur';
+  final _backendUrlController = TextEditingController();
 
   @override
   void initState() {
@@ -26,8 +30,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _loadSettings();
   }
 
+  @override
+  void dispose() {
+    _backendUrlController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
+    final backendUrl = await AppSettings.getBackendUrl();
+    final profileName = await AppSettings.getProfileName();
+    _backendUrlController.text = backendUrl;
     setState(() {
       _selectedLanguage = prefs.getString('target_language') ?? 'fr';
       _subtitleSize = prefs.getDouble('subtitle_size') ?? 18.0;
@@ -35,6 +48,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _autoTranslation = prefs.getBool('auto_translation') ?? true;
       _backgroundDownload = prefs.getBool('background_download') ?? true;
       _notifications = prefs.getBool('notifications') ?? true;
+      _backendUrl = backendUrl;
+      _profileName = profileName;
     });
   }
 
@@ -44,6 +59,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (value is double) await prefs.setDouble(key, value);
     if (value is int) await prefs.setInt(key, value);
     if (value is bool) await prefs.setBool(key, value);
+  }
+
+  void _editProfileName() {
+    final controller = TextEditingController(text: _profileName);
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Votre nom', style: TextStyle(color: AppTheme.textPrimary)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: const TextStyle(color: AppTheme.textPrimary),
+          decoration: const InputDecoration(hintText: 'Entrez votre nom'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () async {
+              final name = controller.text.trim();
+              if (name.isNotEmpty) {
+                await AppSettings.setProfileName(name);
+                if (mounted) setState(() => _profileName = name);
+              }
+              if (mounted) Navigator.pop(context);
+            },
+            child: const Text('Enregistrer'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -64,9 +114,65 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 SettingsItem(
                   icon: Icons.person_rounded,
-                  title: 'Profil',
-                  subtitle: 'Gérer votre compte et préférences',
-                  onTap: () {},
+                  title: _profileName,
+                  subtitle: 'Stocké localement sur cet appareil',
+                  trailing: const Icon(Icons.chevron_right_rounded, color: AppTheme.textSecondary),
+                  onTap: _editProfileName,
+                ),
+              ],
+            ),
+            // Server section
+            SettingsSection(
+              title: 'SERVEUR DE TRADUCTION',
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Adresse du serveur backend',
+                        style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w500),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'L\'IP locale change parfois selon le réseau Wi-Fi — à mettre à jour si la connexion échoue.',
+                        style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _backendUrlController,
+                        style: const TextStyle(color: AppTheme.textPrimary),
+                        decoration: const InputDecoration(hintText: 'ws://192.168.1.100:8000'),
+                        onSubmitted: (v) async {
+                          await AppSettings.setBackendUrl(v.trim());
+                          setState(() => _backendUrl = v.trim());
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Adresse serveur enregistrée')),
+                            );
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () async {
+                            final v = _backendUrlController.text.trim();
+                            await AppSettings.setBackendUrl(v);
+                            setState(() => _backendUrl = v);
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Adresse serveur enregistrée')),
+                              );
+                            }
+                          },
+                          child: const Text('Enregistrer'),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),

@@ -1,9 +1,11 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../theme.dart';
 
 class VideoCard extends StatelessWidget {
   final String title;
   final String? posterUrl;
+  final String? posterFilePath;
   final String language;
   final double? progress;
   final VoidCallback? onTap;
@@ -14,6 +16,7 @@ class VideoCard extends StatelessWidget {
     super.key,
     required this.title,
     this.posterUrl,
+    this.posterFilePath,
     required this.language,
     this.progress,
     this.onTap,
@@ -23,6 +26,11 @@ class VideoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasImage = posterFilePath != null || posterUrl != null;
+    final ImageProvider? image = posterFilePath != null
+        ? FileImage(File(posterFilePath!))
+        : (posterUrl != null ? NetworkImage(posterUrl!) : null);
+
     return GestureDetector(
       onTap: onTap,
       onLongPress: onLongPress,
@@ -35,14 +43,11 @@ class VideoCard extends StatelessWidget {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
                 color: AppTheme.surface,
-                image: posterUrl != null
-                    ? DecorationImage(
-                        image: NetworkImage(posterUrl!),
-                        fit: BoxFit.cover,
-                      )
+                image: image != null
+                    ? DecorationImage(image: image, fit: BoxFit.cover)
                     : null,
               ),
-              child: posterUrl == null
+              child: !hasImage
                   ? Center(
                       child: Icon(
                         Icons.movie_rounded,

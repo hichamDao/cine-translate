@@ -8,6 +8,9 @@ class DualSubtitleDisplay extends StatelessWidget {
   final String translatedLang;
   final String originalFlag;
   final String translatedFlag;
+  final double fontSize;
+  final Color textColor;
+  final double backgroundOpacity;
 
   const DualSubtitleDisplay({
     super.key,
@@ -17,6 +20,9 @@ class DualSubtitleDisplay extends StatelessWidget {
     required this.translatedLang,
     required this.originalFlag,
     required this.translatedFlag,
+    this.fontSize = 18,
+    this.textColor = AppTheme.textPrimary,
+    this.backgroundOpacity = 0.7,
   });
 
   @override
@@ -29,7 +35,7 @@ class DualSubtitleDisplay extends StatelessWidget {
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.7),
+        color: Colors.black.withOpacity(backgroundOpacity),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.white10),
         boxShadow: [
@@ -49,6 +55,8 @@ class DualSubtitleDisplay extends StatelessWidget {
             lang: originalLang,
             text: originalText,
             isOriginal: true,
+            fontSize: fontSize,
+            textColor: textColor,
           ),
           if (originalText.isNotEmpty && translatedText.isNotEmpty)
             const SizedBox(height: 12),
@@ -57,6 +65,8 @@ class DualSubtitleDisplay extends StatelessWidget {
             lang: translatedLang,
             text: translatedText,
             isOriginal: false,
+            fontSize: fontSize,
+            textColor: textColor,
           ),
         ],
       ),
@@ -69,12 +79,16 @@ class _SubtitleLine extends StatelessWidget {
   final String lang;
   final String text;
   final bool isOriginal;
+  final double fontSize;
+  final Color textColor;
 
   const _SubtitleLine({
     required this.flag,
     required this.lang,
     required this.text,
     required this.isOriginal,
+    required this.fontSize,
+    required this.textColor,
   });
 
   @override
@@ -100,8 +114,8 @@ class _SubtitleLine extends StatelessWidget {
         Text(
           text,
           style: TextStyle(
-            color: AppTheme.textPrimary,
-            fontSize: isOriginal ? 15 : 18,
+            color: textColor,
+            fontSize: isOriginal ? fontSize - 3 : fontSize,
             fontWeight: isOriginal ? FontWeight.w400 : FontWeight.w500,
             height: 1.4,
           ),

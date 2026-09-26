@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 import '../models/subtitle_cue.dart';
 import '../services/translation_service.dart';
+import '../services/app_settings.dart';
+import '../services/video_library_service.dart';
 import '../widgets.dart';
 import '../theme.dart';
 
@@ -10,12 +13,14 @@ class PlayerScreen extends StatefulWidget {
   final String videoUrl;
   final String backendBaseUrl;
   final String targetLang;
+  final String? savedVideoId;
 
   const PlayerScreen({
     super.key,
     required this.videoUrl,
     required this.backendBaseUrl,
     required this.targetLang,
+    this.savedVideoId,
   });
 
   @override
@@ -35,11 +40,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
   String _sourceLanguage = 'en';
   String _sourceFlag = '🇺🇸';
   String _targetFlag = '🇫🇷';
+  double _subtitleFontSize = 18;
+  Color _subtitleColor = AppTheme.textPrimary;
+  double _subtitleBgOpacity = 0.7;
+  Timer? _progressSaveTimer;
 
   @override
   void initState() {
     super.initState();
     _targetFlag = _getFlagForLang(widget.targetLang);
+    _loadSubtitleAppearance();
 
     _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))
       ..initialize().then((_) {
@@ -48,6 +58,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
         _controller.addListener(_syncSubtitle);
         if (_readyToPlay) _controller.play();
       });
+
+    if (widget.savedVideoId != null) {
+      _progressSaveTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+        if (_controller.value.isInitialized) {
+          VideoLibraryService.markWatched(
+            widget.savedVideoId!,
+            _controller.value.position.inSeconds.toDouble(),
+          );
+        }
+      });
+    }
 
     _translationService =
         TranslationService(backendBaseUrl: widget.backendBaseUrl)
@@ -91,6 +112,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
     if (_controller.value.isInitialized) {
       _controller.play();
     }
+  }
+
+  Future<void> _loadSubtitleAppearance() async {
+    final size = await AppSettings.getSubtitleSize();
+    final colorValue = await AppSettings.getSubtitleColor();
+    final bgOpacity = await AppSettings.getSubtitleBgOpacity();
+    if (!mounted) return;
+    setState(() {
+      _subtitleFontSize = size;
+      _subtitleColor = Color(colorValue);
+      _subtitleBgOpacity = bgOpacity;
+    });
   }
 
   void _syncSubtitle() {
@@ -148,6 +181,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
+    _progressSaveTimer?.cancel();
+    if (widget.savedVideoId != null && _controller.value.isInitialized) {
+      VideoLibraryService.markWatched(
+        widget.savedVideoId!,
+        _controller.value.position.inSeconds.toDouble(),
+      );
+    }
     _controller.dispose();
     _translationService.dispose();
     super.dispose();
@@ -210,6 +250,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   translatedLang: widget.targetLang.toUpperCase(),
                   originalFlag: _sourceFlag,
                   translatedFlag: _targetFlag,
+                  fontSize: _subtitleFontSize,
+                  textColor: _subtitleColor,
+                  backgroundOpacity: _subtitleBgOpacity,
                 ),
               ),
             // Status badge
@@ -430,62 +473,92 @@ class _PlayerScreenState extends State<PlayerScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        decoration: const BoxDecoration(
-          color: AppTheme.surface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 4,
-              margin: const EdgeInsets.only(top: 12, bottom: 8),
-              decoration: BoxDecoration(
-                color: AppTheme.textSecondary.withOpacity(0.3),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.text_fields_rounded, color: AppTheme.textPrimary),
-              title: const Text('Taille', style: TextStyle(color: AppTheme.textPrimary)),
-              subtitle: Text('${18}px', style: const TextStyle(color: AppTheme.textSecondary)),
-              trailing: SizedBox(
-                width: 120,
-                child: Slider(
-                  value: 18.0,
-                  min: 12,
-                  max: 28,
-                  divisions: 16,
-                  activeColor: AppTheme.primaryViolet,
-                  onChanged: (v) {},
-                ),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.color_lens_rounded, color: AppTheme.textPrimary),
-              title: const Text('Couleur', style: TextStyle(color: AppTheme.textPrimary)),
-              trailing: Container(
-                width: 24,
-                height: 24,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setModalState) => Container(
+          decoration: const BoxDecoration(
+            color: AppTheme.surface,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(top: 12, bottom: 8),
                 decoration: BoxDecoration(
-                  color: AppTheme.textPrimary,
-                  borderRadius: BorderRadius.circular(6),
+                  color: AppTheme.textSecondary.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.format_color_fill_rounded, color: AppTheme.textPrimary),
-              title: const Text('Style', style: TextStyle(color: AppTheme.textPrimary)),
-              subtitle: const Text('Classique', style: TextStyle(color: AppTheme.textSecondary)),
-            ),
-            const SizedBox(height: 16),
-          ],
+              ListTile(
+                leading: const Icon(Icons.text_fields_rounded, color: AppTheme.textPrimary),
+                title: const Text('Taille', style: TextStyle(color: AppTheme.textPrimary)),
+                subtitle: Text('${_subtitleFontSize.round()}px', style: const TextStyle(color: AppTheme.textSecondary)),
+                trailing: SizedBox(
+                  width: 120,
+                  child: Slider(
+                    value: _subtitleFontSize,
+                    min: 12,
+                    max: 28,
+                    divisions: 16,
+                    activeColor: AppTheme.primaryViolet,
+                    onChanged: (v) {
+                      setModalState(() {});
+                      setState(() => _subtitleFontSize = v);
+                      AppSettings.setSubtitleSize(v);
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    const Icon(Icons.color_lens_rounded, color: AppTheme.textPrimary),
+                    const SizedBox(width: 16),
+                    const Text('Couleur', style: TextStyle(color: AppTheme.textPrimary)),
+                    const Spacer(),
+                    ..._subtitleColorChoices.map((color) => GestureDetector(
+                          onTap: () {
+                            setModalState(() {});
+                            setState(() => _subtitleColor = color);
+                            AppSettings.setSubtitleColor(color.value);
+                          },
+                          child: Container(
+                            width: 28,
+                            height: 28,
+                            margin: const EdgeInsets.only(left: 8),
+                            decoration: BoxDecoration(
+                              color: color,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: _subtitleColor.value == color.value
+                                    ? AppTheme.primaryViolet
+                                    : Colors.white24,
+                                width: _subtitleColor.value == color.value ? 3 : 1,
+                              ),
+                            ),
+                          ),
+                        )),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
         ),
       ),
     );
   }
+
+  static const _subtitleColorChoices = [
+    AppTheme.textPrimary,
+    Colors.yellowAccent,
+    Colors.lightGreenAccent,
+    Colors.lightBlueAccent,
+  ];
 
   String _extractTitleFromUrl(String url) {
     try {

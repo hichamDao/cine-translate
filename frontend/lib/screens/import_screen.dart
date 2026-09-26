@@ -1,12 +1,19 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
 
+import '../models/saved_video.dart';
+import '../services/video_library_service.dart';
+import '../services/app_settings.dart';
 import '../widgets.dart';
 import '../theme.dart';
+import 'player_screen.dart';
 
+/// Ecran d'ajout d'une video : on reste 100% sur une URL directe (pas de
+/// fichier local), conformement au fonctionnement reel du backend (qui lit
+/// l'URL lui-meme, sans jamais recevoir ni stocker la video).
 class ImportScreen extends StatefulWidget {
   const ImportScreen({super.key});
 
@@ -15,170 +22,116 @@ class ImportScreen extends StatefulWidget {
 }
 
 class _ImportScreenState extends State<ImportScreen> {
-  File? _selectedVideo;
+  final _urlController = TextEditingController();
+  final _titleController = TextEditingController();
+  String? _thumbnailPath;
+  bool _isCheckingUrl = false;
+  String? _urlError;
   VideoPlayerController? _previewController;
-  ImportStage _stage = ImportStage.idle;
-  double _progress = 0.0;
-  String _progressTitle = '';
-  String _progressSubtitle = '';
-  bool _isIndeterminate = false;
 
   @override
   void dispose() {
+    _urlController.dispose();
+    _titleController.dispose();
     _previewController?.dispose();
     super.dispose();
   }
 
-  Future<void> _pickVideo() async {
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.video,
-        allowedExtensions: ['mp4', 'mov', 'mkv', 'avi'],
-        allowMultiple: false,
-        withReadStream: true,
-      );
+  Future<void> _pickThumbnail() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery, maxWidth: 800);
+    if (picked == null) return;
 
-      if (result != null && result.files.single.path != null) {
-        setState(() {
-          _selectedVideo = File(result.files.single.path!);
-          _stage = ImportStage.preview;
-        });
-        _initPreview();
-      } else if (result != null && result.files.single.bytes != null) {
-        // Handle case where path is not available but bytes are (some platforms)
-        _showError('Fichier sélectionné mais chemin non disponible. Essayez un autre fichier.');
-      }
-    } on PlatformException catch (e) {
-      _showError('Erreur de plateforme: ${e.message} (code: ${e.code})');
-    } catch (e) {
-      _showError('Erreur lors de la sélection: $e');
+    // On copie l'image choisie dans le dossier documents de l'app : le
+    // chemin temporaire renvoye par image_picker n'est pas garanti de
+    // survivre au redemarrage de l'app sur toutes les plateformes.
+    final docsDir = await getApplicationDocumentsDirectory();
+    final fileName = 'thumb_${DateTime.now().millisecondsSinceEpoch}.jpg';
+    final savedFile = await File(picked.path).copy('${docsDir.path}/$fileName');
+
+    if (mounted) setState(() => _thumbnailPath = savedFile.path);
+  }
+
+  Future<void> _testUrl() async {
+    final url = _urlController.text.trim();
+    if (url.isEmpty) {
+      setState(() => _urlError = 'Entrez une URL');
+      return;
     }
-  }
+    final uri = Uri.tryParse(url);
+    if (uri == null || !(uri.isScheme('HTTP') || uri.isScheme('HTTPS'))) {
+      setState(() => _urlError = 'URL invalide (doit commencer par http:// ou https://)');
+      return;
+    }
 
-  void _initPreview() {
-    if (_selectedVideo == null) return;
-    _previewController = VideoPlayerController.file(_selectedVideo!);
-    _previewController!.initialize().then((_) {
-      if (mounted) setState(() {});
-    });
-  }
-
-  void _startAnalysis() {
     setState(() {
-      _stage = ImportStage.analyzing;
-      _progress = 0.0;
-      _progressTitle = 'Analyse de la vidéo...';
-      _progressSubtitle = 'Extraction de l\'audio et détection des dialogues';
-      _isIndeterminate = true;
+      _isCheckingUrl = true;
+      _urlError = null;
     });
 
-    _simulateProgress();
-  }
-
-  void _simulateProgress() async {
-    const steps = [
-      (0.2, 'Analyse de la vidéo...', 'Extraction de l\'audio'),
-      (0.4, 'Analyse de la vidéo...', 'Détection des dialogues'),
-      (0.6, 'Traitement audio...', 'Reconnaissance vocale en cours'),
-      (0.8, 'Traitement audio...', 'Génération des sous-titres'),
-      (1.0, 'Terminé !', 'Prêt pour la traduction'),
-    ];
-
-    for (final (progress, title, subtitle) in steps) {
-      await Future.delayed(const Duration(milliseconds: 800));
-      if (!mounted) return;
-      setState(() {
-        _progress = progress;
-        _progressTitle = title;
-        _progressSubtitle = subtitle;
-        _isIndeterminate = progress < 1.0;
-      });
-    }
-
-    if (mounted) {
-      setState(() {
-        _stage = ImportStage.complete;
-      });
-      _showSuccessDialog();
+    _previewController?.dispose();
+    _previewController = VideoPlayerController.networkUrl(uri);
+    try {
+      await _previewController!.initialize().timeout(const Duration(seconds: 12));
+      if (mounted) {
+        setState(() => _isCheckingUrl = false);
+        if (_titleController.text.trim().isEmpty) {
+          _titleController.text = _guessTitleFromUrl(url);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isCheckingUrl = false;
+          _urlError = 'Impossible de lire cette URL (vérifiez qu\'elle pointe vers un fichier vidéo direct).';
+        });
+      }
     }
   }
 
-  void _showSuccessDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        backgroundColor: AppTheme.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 64,
-              height: 64,
-              decoration: BoxDecoration(
-                color: AppTheme.success.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Icon(Icons.check_rounded, color: AppTheme.success, size: 32),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              'Vidéo prête !',
-              style: TextStyle(
-                color: AppTheme.textPrimary,
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'La vidéo a été analysée. Vous pouvez maintenant la lire avec traduction en temps réel.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppTheme.textSecondary, fontSize: 14),
-            ),
-            const SizedBox(height: 24),
-            PrimaryButton(
-              label: 'Commencer la traduction',
-              onPressed: () {
-                Navigator.pop(context);
-                _navigateToPlayer();
-              },
-            ),
-            const SizedBox(height: 12),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                setState(() {
-                  _selectedVideo = null;
-                  _stage = ImportStage.idle;
-                });
-              },
-              child: const Text('Importer une autre vidéo'),
-            ),
-          ],
+  String _guessTitleFromUrl(String url) {
+    try {
+      final segments = Uri.parse(url).pathSegments;
+      if (segments.isNotEmpty) {
+        return segments.last.replaceAll(RegExp(r'\.(mp4|mov|mkv|avi|m3u8)$', caseSensitive: false), '');
+      }
+    } catch (_) {}
+    return 'Vidéo sans titre';
+  }
+
+  Future<void> _saveAndPlay() async {
+    final url = _urlController.text.trim();
+    if (url.isEmpty || _previewController == null || !_previewController!.value.isInitialized) {
+      setState(() => _urlError = 'Testez d\'abord l\'URL avec le bouton ci-dessus');
+      return;
+    }
+
+    final targetLang = await AppSettings.getTargetLanguage();
+    final backendUrl = await AppSettings.getBackendUrl();
+
+    final video = SavedVideo(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      title: _titleController.text.trim().isEmpty
+          ? _guessTitleFromUrl(url)
+          : _titleController.text.trim(),
+      videoUrl: url,
+      thumbnailPath: _thumbnailPath,
+      targetLang: targetLang,
+    );
+
+    await VideoLibraryService.add(video);
+
+    if (!mounted) return;
+    Navigator.pop(context, true);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PlayerScreen(
+          videoUrl: video.videoUrl,
+          backendBaseUrl: backendUrl,
+          targetLang: video.targetLang,
+          savedVideoId: video.id,
         ),
-      ),
-    );
-  }
-
-  void _navigateToPlayer() {
-    // In real app, navigate to player with the video
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Navigation vers le lecteur (à implémenter)'),
-        backgroundColor: AppTheme.primaryViolet,
-      ),
-    );
-  }
-
-  void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: AppTheme.error,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
@@ -188,159 +141,98 @@ class _ImportScreenState extends State<ImportScreen> {
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: const Text('Importation'),
+        title: const Text('Ajouter une vidéo'),
         backgroundColor: AppTheme.surface,
-        leading: _stage != ImportStage.idle
-            ? IconButton(
-                onPressed: () {
-                  if (_stage == ImportStage.preview) {
-                    setState(() {
-                      _selectedVideo = null;
-                      _stage = ImportStage.idle;
-                    });
-                  } else if (_stage == ImportStage.complete) {
-                    Navigator.pop(context);
-                  }
-                },
-                icon: const Icon(Icons.arrow_back_rounded),
-              )
-            : null,
       ),
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(20),
-          child: _buildContent(),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildContent() {
-    switch (_stage) {
-      case ImportStage.idle:
-        return Center(
-          child: VideoImportArea(onTap: _pickVideo),
-        );
-      case ImportStage.preview:
-        return _buildPreview();
-      case ImportStage.analyzing:
-        return ImportProgressOverlay(
-          title: _progressTitle,
-          subtitle: _progressSubtitle,
-          progress: _progress,
-          isIndeterminate: _isIndeterminate,
-        );
-      case ImportStage.complete:
-        return ImportProgressOverlay(
-          title: _progressTitle,
-          subtitle: _progressSubtitle,
-          progress: 1.0,
-          isIndeterminate: false,
-        );
-    }
-  }
-
-  Widget _buildPreview() {
-    return Column(
-      children: [
-        // Video preview
-        AspectRatio(
-          aspectRatio: 16 / 9,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: _previewController != null && _previewController!.value.isInitialized
-                ? VideoPlayer(_previewController!)
-                : Container(
-                    color: AppTheme.surface,
-                    child: const Center(child: CircularProgressIndicator(color: AppTheme.primaryViolet)),
-                  ),
-          ),
-        ),
-        const SizedBox(height: 24),
-        // File info
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppTheme.surface,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.videocam_rounded, color: AppTheme.primaryViolet, size: 28),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _selectedVideo?.path.split('/').last ?? 'Vidéo sélectionnée',
-                      style: const TextStyle(
-                        color: AppTheme.textPrimary,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      _formatFileSize(_selectedVideo?.lengthSync() ?? 0),
-                      style: const TextStyle(
-                        color: AppTheme.textSecondary,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
+              const Text(
+                'Colle l\'URL directe d\'une vidéo (fichier .mp4/.m3u8 accessible '
+                'publiquement) — pas une page de streaming protégée par DRM comme '
+                'Netflix ou Disney+.',
+                style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+              ),
+              const SizedBox(height: 20),
+              TextField(
+                controller: _urlController,
+                style: const TextStyle(color: AppTheme.textPrimary),
+                decoration: InputDecoration(
+                  labelText: 'URL de la vidéo',
+                  hintText: 'https://exemple.com/video.mp4',
+                  errorText: _urlError,
+                  suffixIcon: _isCheckingUrl
+                      ? const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: SizedBox(
+                            width: 16, height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : IconButton(
+                          icon: const Icon(Icons.play_circle_outline_rounded),
+                          onPressed: _testUrl,
+                          tooltip: 'Tester la vidéo',
+                        ),
+                ),
+                onSubmitted: (_) => _testUrl(),
+              ),
+              const SizedBox(height: 16),
+              if (_previewController != null && _previewController!.value.isInitialized) ...[
+                AspectRatio(
+                  aspectRatio: _previewController!.value.aspectRatio,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: VideoPlayer(_previewController!),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+              TextField(
+                controller: _titleController,
+                style: const TextStyle(color: AppTheme.textPrimary),
+                decoration: const InputDecoration(labelText: 'Titre (optionnel)'),
+              ),
+              const SizedBox(height: 16),
+              GestureDetector(
+                onTap: _pickThumbnail,
+                child: Container(
+                  height: 120,
+                  decoration: BoxDecoration(
+                    color: AppTheme.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    image: _thumbnailPath != null
+                        ? DecorationImage(image: FileImage(File(_thumbnailPath!)), fit: BoxFit.cover)
+                        : null,
+                  ),
+                  child: _thumbnailPath == null
+                      ? const Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.image_rounded, color: AppTheme.textSecondary, size: 28),
+                              SizedBox(height: 8),
+                              Text('Choisir une miniature (optionnel)',
+                                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+                            ],
+                          ),
+                        )
+                      : null,
                 ),
               ),
-              IconButton(
-                onPressed: () => setState(() {
-                  _selectedVideo = null;
-                  _stage = ImportStage.idle;
-                }),
-                icon: const Icon(Icons.close_rounded, color: AppTheme.textSecondary),
+              const SizedBox(height: 32),
+              PrimaryButton(
+                label: 'Enregistrer et regarder',
+                onPressed: _saveAndPlay,
+                icon: Icons.play_arrow_rounded,
               ),
             ],
           ),
         ),
-        const SizedBox(height: 24),
-        // Action buttons
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: () => setState(() {
-                  _selectedVideo = null;
-                  _stage = ImportStage.idle;
-                }),
-                child: const Text('Annuler'),
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: PrimaryButton(
-                label: 'Analyser et traduire',
-                onPressed: _startAnalysis,
-                icon: Icons.analytics_rounded,
-              ),
-            ),
-          ],
-        ),
-      ],
+      ),
     );
   }
-
-  String _formatFileSize(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
-  }
-}
-
-enum ImportStage {
-  idle,
-  preview,
-  analyzing,
-  complete,
 }

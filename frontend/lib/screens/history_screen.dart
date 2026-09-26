@@ -1,48 +1,54 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 
+import '../models/saved_video.dart';
+import '../services/video_library_service.dart';
+import '../services/app_settings.dart';
 import '../widgets.dart';
 import '../theme.dart';
+import 'player_screen.dart';
 
-class HistoryScreen extends StatelessWidget {
+class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
 
-  static final List<HistoryItem> _history = [
-    HistoryItem(
-      title: 'Interstellar',
-      posterUrl: 'https://image.tmdb.org/t/p/w500/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg',
-      language: 'Français',
-      progress: 0.82,
-      lastWatched: DateTime.now().subtract(const Duration(days: 2)),
-    ),
-    HistoryItem(
-      title: 'The Matrix',
-      posterUrl: 'https://image.tmdb.org/t/p/w500/f89U3ADr1oiB1s9GkdPOEpXUk5H.jpg',
-      language: 'Français',
-      progress: 0.45,
-      lastWatched: DateTime.now().subtract(const Duration(days: 5)),
-    ),
-    HistoryItem(
-      title: 'Inception',
-      posterUrl: 'https://image.tmdb.org/t/p/w500/9gk7adHYeDvHkCSEqAvQNLV5Uge.jpg',
-      language: 'Français',
-      progress: 0.12,
-      lastWatched: DateTime.now().subtract(const Duration(days: 10)),
-    ),
-    HistoryItem(
-      title: 'Blade Runner 2049',
-      posterUrl: 'https://image.tmdb.org/t/p/w500/gajva96ISrVW8FDsO7x3OjvrtsJ.jpg',
-      language: 'English',
-      progress: 0.67,
-      lastWatched: DateTime.now().subtract(const Duration(days: 15)),
-    ),
-    HistoryItem(
-      title: 'Dune',
-      posterUrl: 'https://image.tmdb.org/t/p/w500/jYEW2xGT37CudPvKGWKR4MWjYQG.jpg',
-      language: 'Français',
-      progress: 1.0,
-      lastWatched: DateTime.now().subtract(const Duration(days: 20)),
-    ),
-  ];
+  @override
+  State<HistoryScreen> createState() => _HistoryScreenState();
+}
+
+class _HistoryScreenState extends State<HistoryScreen> {
+  List<SavedVideo> _history = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final history = await VideoLibraryService.getHistory();
+    if (mounted) setState(() {
+      _history = history;
+      _loading = false;
+    });
+  }
+
+  Future<void> _openPlayer(SavedVideo video) async {
+    final backendUrl = await AppSettings.getBackendUrl();
+    if (!mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PlayerScreen(
+          videoUrl: video.videoUrl,
+          backendBaseUrl: backendUrl,
+          targetLang: video.targetLang,
+          savedVideoId: video.id,
+        ),
+      ),
+    );
+    _load();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -53,37 +59,53 @@ class HistoryScreen extends StatelessWidget {
         backgroundColor: AppTheme.surface,
       ),
       body: SafeArea(
-        child: _history.isEmpty
-            ? EmptyState(
-                icon: Icons.history_rounded,
-                title: 'Aucun historique',
-                subtitle: 'Les films que vous regardez apparaîtront ici',
-              )
-            : ListView.separated(
-                padding: const EdgeInsets.all(16),
-                itemCount: _history.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 12),
-                itemBuilder: (context, index) {
-                  final item = _history[index];
-                  return _HistoryTile(item: item);
-                },
-              ),
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _history.isEmpty
+                ? const EmptyState(
+                    icon: Icons.history_rounded,
+                    title: 'Aucun historique',
+                    subtitle: 'Les vidéos que vous regardez apparaîtront ici',
+                  )
+                : RefreshIndicator(
+                    onRefresh: _load,
+                    child: ListView.separated(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _history.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 12),
+                      itemBuilder: (context, index) {
+                        final video = _history[index];
+                        return _HistoryTile(
+                          video: video,
+                          onTap: () => _openPlayer(video),
+                        );
+                      },
+                    ),
+                  ),
       ),
     );
   }
 }
 
 class _HistoryTile extends StatelessWidget {
-  final HistoryItem item;
+  final SavedVideo video;
+  final VoidCallback onTap;
 
-  const _HistoryTile({required this.item});
+  const _HistoryTile({required this.video, required this.onTap});
+
+  // Estimation grossiere de progression : sans duree totale connue de la
+  // video, on affiche juste la position de reprise en minutes plutot
+  // qu'un pourcentage (qui serait invente).
+  String _formatPosition(double seconds) {
+    final minutes = (seconds / 60).floor();
+    final secs = (seconds % 60).round();
+    return '${minutes}m${secs.toString().padLeft(2, '0')}s';
+  }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () {
-        // Navigate to player
-      },
+      onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
           color: AppTheme.surface,
@@ -95,9 +117,9 @@ class _HistoryTile extends StatelessWidget {
               borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
               child: AspectRatio(
                 aspectRatio: 2 / 3,
-                child: item.posterUrl != null
-                    ? Image.network(
-                        item.posterUrl!,
+                child: video.thumbnailPath != null
+                    ? Image.file(
+                        File(video.thumbnailPath!),
                         fit: BoxFit.cover,
                         width: 100,
                         errorBuilder: (_, __, ___) => Container(
@@ -118,7 +140,7 @@ class _HistoryTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      item.title,
+                      video.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -137,7 +159,7 @@ class _HistoryTile extends StatelessWidget {
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(
-                            item.language,
+                            video.targetLang.toUpperCase(),
                             style: const TextStyle(
                               color: AppTheme.primaryViolet,
                               fontSize: 11,
@@ -147,7 +169,7 @@ class _HistoryTile extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          _formatDate(item.lastWatched),
+                          _formatDate(video.lastWatched!),
                           style: const TextStyle(
                             color: AppTheme.textSecondary,
                             fontSize: 12,
@@ -155,31 +177,15 @@ class _HistoryTile extends StatelessWidget {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    if (item.progress > 0) ...[
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(2),
-                              child: LinearProgressIndicator(
-                                value: item.progress,
-                                backgroundColor: Colors.white10,
-                                valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.primaryViolet),
-                                minHeight: 4,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            '${(item.progress * 100).round()}%',
-                            style: const TextStyle(
-                              color: AppTheme.textSecondary,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
+                    if (video.lastPositionSeconds > 0) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Repris à ${_formatPosition(video.lastPositionSeconds)}',
+                        style: const TextStyle(
+                          color: AppTheme.textSecondary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ],
                   ],
@@ -200,20 +206,4 @@ class _HistoryTile extends StatelessWidget {
     if (diff < 7) return 'Il y a $diff jours';
     return '${date.day}/${date.month}/${date.year}';
   }
-}
-
-class HistoryItem {
-  final String title;
-  final String? posterUrl;
-  final String language;
-  final double progress;
-  final DateTime lastWatched;
-
-  HistoryItem({
-    required this.title,
-    this.posterUrl,
-    required this.language,
-    required this.progress,
-    required this.lastWatched,
-  });
 }
