@@ -1,11 +1,34 @@
+import logging
 from typing import List, Optional, Tuple
 
 import numpy as np
 from faster_whisper import WhisperModel
+from faster_whisper.vad import VadOptions, get_speech_timestamps
 
 from .config import WHISPER_MODEL_SIZE, WHISPER_DEVICE, WHISPER_COMPUTE_TYPE, WHISPER_BEAM_SIZE
 
+logger = logging.getLogger(__name__)
+
 _model: Optional[WhisperModel] = None
+
+# Partager exactement les memes reglages que ceux appliques par
+# WhisperModel.transcribe(vad_filter=True), sans les dupliquer ici.
+_VAD_OPTIONS = VadOptions()
+
+
+def has_speech(audio: np.ndarray) -> bool:
+    """Dit si le chunk contient effectivement de la parole.
+
+    Indispensable : quand le VAD ne garde AUCUN segment (chunk de silence,
+    music, bruit de fond), faster_whisper compacte l'audio a un tableau vide
+    et plante sur `max()` de dict vide lors de la detection de langue.
+    """
+    try:
+        return bool(get_speech_timestamps(audio, _VAD_OPTIONS))
+    except Exception as e:  # noqa: BLE001
+        # Si le VAD lui-meme echoue, on laisse passer : whisper sera juge.
+        logger.warning("VAD indisponible sur ce chunk (%s: %s)", type(e).__name__, e)
+        return True
 
 
 def get_model() -> WhisperModel:
@@ -36,6 +59,11 @@ def transcribe_chunk(
     """
     audio = pcm_bytes_to_float_array(raw_pcm)
     if audio.size == 0:
+        return [], source_lang or "unknown"
+
+    if not has_speech(audio):
+        # Chunk sans parole : on le saute au lieu de laisser faster_whisper
+        # echouer sur une detection de langue impossible.
         return [], source_lang or "unknown"
 
     model = get_model()

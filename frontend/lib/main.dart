@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'screens/home_screen.dart';
+import 'theme.dart';
+import 'screens/main_navigation_screen.dart';
 
 void main() {
   runApp(const CineTranslateApp());
@@ -13,11 +14,9 @@ class CineTranslateApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Cine-Translate',
-      theme: ThemeData(
-        colorSchemeSeed: Colors.deepPurple,
-        useMaterial3: true,
-      ),
-      home: const HomeScreen(),
+      theme: AppTheme.darkTheme,
+      home: const MainNavigationScreen(),
+      debugShowCheckedModeBanner: false,
     );
   }
 }
