@@ -13,13 +13,16 @@ frontend/.flutter-plugins
 frontend/.flutter-plugins-dependencies
 frontend/.packages
 frontend/build/
-frontend/android/
-frontend/ios/
 frontend/linux/
 frontend/macos/
 frontend/windows/
 frontend/web/
 frontend/*.iml
+
+# --- Logs de debug (artefacts temporaires, pas du code) ---
+frontend/log.txt
+frontend/apk_log.txt
+frontend/*.log
 
 # --- OS / editors ---
 .DS_Store
