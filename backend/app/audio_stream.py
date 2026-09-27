@@ -1,7 +1,18 @@
 import subprocess
 from typing import Iterator, Optional
 
+from .config import AUDIO_ENHANCE
+
 SAMPLE_RATE = 16000
+
+# Chaine de filtres ffmpeg appliquee AVANT l'envoi a Whisper, quand
+# AUDIO_ENHANCE=true :
+#   - highpass=80Hz  : coupe le rumble/grave qui ne contient pas de parole
+#   - afftdn         : reduction de bruit de fond leger (FFT denoiser)
+#   - loudnorm       : normalise le volume a un niveau constant et clair
+#     (cible -16 LUFS, standard streaming/podcast ; passe unique, adaptee
+#     au traitement en flux continu)
+_ENHANCE_FILTER = "highpass=f=80,afftdn=nf=-25,loudnorm=I=-16:TP=-1.5:LRA=11"
 
 
 def open_audio_stream(video_url: str) -> subprocess.Popen:
@@ -18,6 +29,10 @@ def open_audio_stream(video_url: str) -> subprocess.Popen:
         "-vn",                      # pas de piste video du tout
         "-ac", "1",                 # mono
         "-ar", str(SAMPLE_RATE),    # 16kHz, format attendu par whisper
+    ]
+    if AUDIO_ENHANCE:
+        cmd += ["-af", _ENHANCE_FILTER]
+    cmd += [
         "-f", "s16le",              # PCM 16 bits brut, simple a decouper
         "pipe:1",
     ]
