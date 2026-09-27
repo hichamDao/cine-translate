@@ -8,6 +8,7 @@ class AppSettings {
   static const _keySubtitleSize = 'subtitle_size';
   static const _keySubtitleColor = 'subtitle_color';
   static const _keySubtitleBgOpacity = 'subtitle_bg_opacity';
+  static const _keyShowOriginalSubtitle = 'show_original_subtitle';
   static const _keyAutoTranslation = 'auto_translation';
   static const _keyProfileName = 'profile_name';
   static const _keyProfileAvatarPath = 'profile_avatar_path';
@@ -65,6 +66,18 @@ class AppSettings {
   static Future<void> setSubtitleBgOpacity(double opacity) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_keySubtitleBgOpacity, opacity);
+  }
+
+  /// Desactive par defaut : n'affiche que la traduction, pas le texte
+  /// original en plus (comportement demande par l'utilisateur).
+  static Future<bool> getShowOriginalSubtitle() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_keyShowOriginalSubtitle) ?? false;
+  }
+
+  static Future<void> setShowOriginalSubtitle(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyShowOriginalSubtitle, value);
   }
 
   static Future<bool> getAutoTranslation() async {

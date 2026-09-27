@@ -95,6 +95,7 @@ async def ws_translate(
                             "end": offset + seg["end"],
                             "text": translated,
                             "original": seg["text"],
+                            "source_lang": source_lang or detected_lang,
                         }
                     )
 

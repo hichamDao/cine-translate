@@ -43,6 +43,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   double _subtitleFontSize = 18;
   Color _subtitleColor = AppTheme.textPrimary;
   double _subtitleBgOpacity = 0.7;
+  bool _showOriginalText = false;
   Timer? _progressSaveTimer;
 
   @override
@@ -81,8 +82,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
       if (!mounted) return;
       setState(() {
         _cues.add(cue);
-        if (cue.original != null) {
-          _sourceLanguage = _detectLanguage(cue.original!);
+        // Le backend transmet la langue reellement detectee par Whisper ;
+        // on ne devine avec des heuristiques que si jamais elle manque
+        // (compat. avec un backend plus ancien).
+        final detected = cue.sourceLang ?? (cue.original != null ? _detectLanguage(cue.original!) : null);
+        if (detected != null) {
+          _sourceLanguage = detected;
           _sourceFlag = _getFlagForLang(_sourceLanguage);
         }
       });
@@ -118,11 +123,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final size = await AppSettings.getSubtitleSize();
     final colorValue = await AppSettings.getSubtitleColor();
     final bgOpacity = await AppSettings.getSubtitleBgOpacity();
+    final showOriginal = await AppSettings.getShowOriginalSubtitle();
     if (!mounted) return;
     setState(() {
       _subtitleFontSize = size;
       _subtitleColor = Color(colorValue);
       _subtitleBgOpacity = bgOpacity;
+      _showOriginalText = showOriginal;
     });
   }
 
@@ -244,7 +251,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 left: 16,
                 right: 16,
                 child: DualSubtitleDisplay(
-                  originalText: _currentOriginalText,
+                  originalText: _showOriginalText ? _currentOriginalText : '',
                   translatedText: _currentTranslatedText,
                   originalLang: _sourceLanguage.toUpperCase(),
                   translatedLang: widget.targetLang.toUpperCase(),
@@ -315,50 +322,69 @@ class _PlayerScreenState extends State<PlayerScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        decoration: const BoxDecoration(
-          color: AppTheme.surface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 4,
-              margin: const EdgeInsets.only(top: 12, bottom: 8),
-              decoration: BoxDecoration(
-                color: AppTheme.textSecondary.withOpacity(0.3),
-                borderRadius: BorderRadius.circular(2),
+      builder: (_) => StatefulBuilder(
+        builder: (context, setModalState) => Container(
+          decoration: const BoxDecoration(
+            color: AppTheme.surface,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(top: 12, bottom: 8),
+                decoration: BoxDecoration(
+                  color: AppTheme.textSecondary.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.closed_caption_rounded, color: AppTheme.textPrimary),
-              title: const Text('Sous-titres', style: TextStyle(color: AppTheme.textPrimary)),
-              trailing: Switch(
-                value: _showSubtitles,
-                activeColor: AppTheme.primaryViolet,
-                onChanged: (v) => setState(() => _showSubtitles = v),
+              ListTile(
+                leading: const Icon(Icons.closed_caption_rounded, color: AppTheme.textPrimary),
+                title: const Text('Sous-titres', style: TextStyle(color: AppTheme.textPrimary)),
+                trailing: Switch(
+                  value: _showSubtitles,
+                  activeColor: AppTheme.primaryViolet,
+                  onChanged: (v) {
+                    setModalState(() {});
+                    setState(() => _showSubtitles = v);
+                  },
+                ),
               ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.speed_rounded, color: AppTheme.textPrimary),
-              title: const Text('Vitesse de lecture', style: TextStyle(color: AppTheme.textPrimary)),
-              onTap: () {
-                Navigator.pop(context);
-                _showSpeedDialog(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.translate_rounded, color: AppTheme.textPrimary),
-              title: const Text('Changer la langue', style: TextStyle(color: AppTheme.textPrimary)),
-              onTap: () {
-                Navigator.pop(context);
-                _showLanguageDialog(context);
-              },
-            ),
-            const SizedBox(height: 16),
-          ],
+              ListTile(
+                leading: const Icon(Icons.compare_arrows_rounded, color: AppTheme.textPrimary),
+                title: const Text('Afficher le texte original', style: TextStyle(color: AppTheme.textPrimary)),
+                subtitle: const Text('En plus de la traduction', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                trailing: Switch(
+                  value: _showOriginalText,
+                  activeColor: AppTheme.primaryViolet,
+                  onChanged: (v) {
+                    setModalState(() {});
+                    setState(() => _showOriginalText = v);
+                    AppSettings.setShowOriginalSubtitle(v);
+                  },
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.speed_rounded, color: AppTheme.textPrimary),
+                title: const Text('Vitesse de lecture', style: TextStyle(color: AppTheme.textPrimary)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showSpeedDialog(context);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.translate_rounded, color: AppTheme.textPrimary),
+                title: const Text('Changer la langue', style: TextStyle(color: AppTheme.textPrimary)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showLanguageDialog(context);
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
         ),
       ),
     );
